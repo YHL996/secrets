@@ -3,7 +3,8 @@ const express = require("express");
 const bodyParser = require("body-parser");
 const ejs = require("ejs");
 const mongoose = require("mongoose");
-const encrypt = require("mongoose-encryption")
+const bcrypt = require("bcrypt");
+const saltRounds = 10;
 
 const app = express();
 
@@ -19,12 +20,7 @@ const userSchema = new mongoose.Schema({
     email:String,
     password:String
 });
-//
-// Define a secret key to be used for encryption and decryption
-secret = process.env.SECRET;
 
-// Add the encrypt plugin to the user schema, passing in the secret key as an option;only the password field is to be encrypted
-userSchema.plugin(encrypt, {secret: secret, encryptedFields: ["password"]});
 
 const User = new mongoose.model("User", userSchema);
 
@@ -41,25 +37,30 @@ app.get("/register", function(req,res){
 });
 
 app.post("/register", function(req,res){
-    const newUser = new User({
-        email: req.body.username,
-        password: req.body.password
-    });
-    newUser.save().then(function(){
-        res.render("secrets");
-    }).catch(function(err){
-        console.log(err);
+
+    bcrypt.hash(req.body.password, saltRounds, function(err, hash) {
+        const newUser = new User({
+            email: req.body.username,
+            password: hash
+        });
+        newUser.save().then(function(){
+            res.render("secrets");
+        }).catch(function(err){
+            console.log(err);
+        });
     });
 });
 
 app.post("/login", function(req,res){
     User.findOne({email: req.body.username}).then(function(foundUser){
         if(foundUser){
-            if(foundUser.password === req.body.password){
-                res.render("secrets")
-            } else {
-                res.send("Incorrect password")
-            };
+            bcrypt.compare(req.body.password, foundUser.password, function(err, result){
+                if(result === true){
+                    res.render("secrets")
+                } else {
+                    res.send("Incorrect password")
+                }
+            });
         } else {
             res.send("Incorrect information")
         };
