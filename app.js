@@ -35,7 +35,8 @@ const userSchema = new mongoose.Schema({
     username: String,
     password: String,
     googleId: String,
-    facebookId: String
+    facebookId: String,
+    secrets: [String]
 });
 
 userSchema.plugin(passportLocalMongoose);
@@ -68,7 +69,6 @@ passport.use(new GoogleStrategy({
     callbackURL: "http://localhost:3000/auth/google/secrets"
 },
     function (accessToken, refreshToken, profile, cb) {
-        console.log(profile);
         User.findOrCreate({ googleId: profile.id }, function (err, user) {
             return cb(err, user);
         });
@@ -82,7 +82,6 @@ passport.use(new FacebookStrategy({
     callbackURL: "http://localhost:3000/auth/facebook/secrets"
 },
     function (accessToken, refreshToken, profile, cb) {
-        console.log(profile);
         User.findOrCreate({ facebookId: profile.id }, function (err, user) {
             return cb(err, user);
         });
@@ -123,13 +122,45 @@ app.get("/register", function (req, res) {
 });
 
 app.get("/secrets", function (req, res) {
-    if (req.isAuthenticated()) {
-        res.render("secrets");
+    //users with secrets not being null
+    User.find({"secrets": {$ne: null}}).then(function(foundUsers){
+        if (foundUsers) {
+            res.render("secrets", {usersWithSecrets: foundUsers});
+        } else {
+            res.render("secrets");
+        };
+    }).catch(function(err){
+        console.log(err);
+    });
+});
+
+app.get("/submit", function(req,res){
+    if (req.isAuthenticated()){
+        res.render("submit");
     } else {
-        res.redirect("/login")
+        res.redirect("/login");
     };
 });
-//logout of user locally but not on google
+
+app.post("/submit", function(req,res){
+    const submittedSecret = req.body.secret;
+    User.findById(req.user.id).then(function(foundUser){
+        if (foundUser) {
+            if (foundUser.secrets){
+                foundUser.secrets.push(submittedSecret);
+            } else {
+                foundUser.secrets = [submittedSecret];
+            };
+            foundUser.save().then(function(){
+                res.redirect("/secrets");
+            });
+        };
+    }).catch(function(err){
+        console.log(err);
+    });
+});
+
+//logout of user locally but not on google or facebook
 app.get("/logout", function (req, res) {
     req.logout(function () {
         res.redirect('/');
@@ -162,12 +193,11 @@ app.post("/login", function (req, res) {
         if (err) {
             console.log(err);
         } else {
-            passport.authenticate("local")(req, res, function () {
+            passport.authenticate("local",{failureRedirect: "/login", failureMessage: true})(req, res, function () {
                 res.redirect("/secrets");
             });
         };
     });
-
 });
 
 app.listen(3000, function () {
